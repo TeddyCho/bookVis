@@ -1,0 +1,198 @@
+import os
+import zipfile
+import csv
+import datetime
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+from matplotlib import collections as mc
+from matplotlib import gridspec
+import matplotlib.dates as mdates
+from moviepy.video.io.bindings import mplfig_to_npimage
+import moviepy.editor as mpy
+from matplotlib.dates import date2num
+
+class FrameInfo:
+    def __init__(self, aStartTime, aTimeBucketDiff):
+        self.startTime = aStartTime
+        self.endTime = aStartTime + aTimeBucketDiff
+        self.orderBooks = list()
+        self.trades = list()
+        self.bid = 0
+        self.offer = 0
+        self.bidSize = 0
+        self.offerSize = 0
+    def addOrder(self, aOrderBook):
+        self.orderBooks.append(aOrderBook)
+        self.bid = aOrderBook.bid
+        self.bidSize = aOrderBook.bidSize
+        self.offer = aOrderBook.offer
+        self.offerSize = aOrderBook.offerSize
+    def addTrade(self, aTrade):
+        self.trades.append(aTrade)
+class OrderBook:
+    def __init__(self, aRow):
+        self.dateTime = datetime.datetime.strptime(aRow["DATE"] + " " + aRow["TIME"], "%Y%m%d %H:%M:%S")
+        self.symbol = aRow["SYMBOL"]
+        self.exchange = inferExchange(aRow["EX"])
+        self.bid = float(aRow["BID"])
+        self.bidSize = int(aRow["BIDSIZ"])
+        self.offer = float(aRow["OFR"])
+        self.offerSize = int(aRow["OFRSIZ"])
+        self.mode = aRow["MODE"]
+        self.mmId = aRow["MMID"]
+class Trade:
+    def __init__(self, aRow):
+        self.symbol = aRow["SYMBOL"]
+        self.dateTime = datetime.datetime.strptime(aRow["DATE"] + " " + aRow["TIME"], "%Y%m%d %H:%M:%S")
+        self.price = float(aRow["PRICE"])
+        self.tradeVolume = int(aRow["SIZE"])
+        self.saleCondition = aRow["COND"]
+        self.exchange = inferExchange(aRow["EX"])
+def unzipFile(aFileName):
+    myFilePath = os.path.join(os.getcwd(), "..") + '\\data\\' + aFileName + '_csv.zip'
+    print("Unzipping " + myFilePath + "...")
+    myFile = open(myFilePath, 'rb')
+    z = zipfile.ZipFile(myFile)
+    for name in z.namelist():
+        z.extract(name, os.path.join(os.getcwd(), "..") + "\\data\\")
+        myFile.close()
+    return(os.path.join(os.getcwd(), "..") + "\\data\\" + aFileName + ".csv")
+def inferExchange(aExchangeString):
+    myCodeDict = {"A":"NYSE MKT", "B":"NASDAQ OMX BX", "C":"National",
+                  "D":"FINRA", "I":"ISE", "J":"Direct Edge A",
+                  "K":"Direct Edge X", "M":"Chicago", "N":"NYSE",
+                  "T":"NASDAQ OMX", "P":"NYSE Arca SM", "S":"Consolidated Tape System",
+                  "T/Q":"NASDAQ", "Q":"NASDAQ", "W":"CBOE", "X":"NASDAQ OMX PSX",
+                  "Y":"BATS Y", "Z":"BATS"}
+    try:
+        return myCodeDict[aExchangeString]
+    except:
+        return "Invalid Exchange"
+def getFrameInfo(aOrderBuffer):
+    myLastRow = aOrderBuffer.pop()
+    return(myLastRow)
+def fastForwardReaderPastDateTime(aReader, aDateTime):
+    myCurrentRow = next(aReader)
+    while datetime.datetime.strptime(myCurrentRow["DATE"] + " " + myCurrentRow["TIME"],
+                                     "%Y%m%d %H:%M:%S") <= myStartTime:
+        myCurrentRow = next(aReader)
+    return(myCurrentRow)
+def asSeconds(aDateTime):
+    return(aDateTime - datetime.datetime(1970, 1, 1)).total_seconds()
+def asDateTime(aSeconds):
+    return(datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=aSeconds))
+def checkOutBookFile(aOrderReader, aTradeReader, aStartTime, aEndTime, aTimeBucketDiff):
+    theCLOBFrameInfos = [FrameInfo(asDateTime(st), aTimeBucketDiff) for st in range(int(asSeconds(aStartTime)),
+                                                                   int(asSeconds(aEndTime)),
+                                                                   int(aTimeBucketDiff.total_seconds()))]
+    myCurrentOrderBook = OrderBook(fastForwardReaderPastDateTime(aOrderReader, aStartTime))
+    myCurrentTrade = Trade(fastForwardReaderPastDateTime(aTradeReader, aStartTime))  
+    myExchange = "NASDAQ OMX BX"
+    for myCurrentFrameInfo in theCLOBFrameInfos:
+        while myCurrentOrderBook.dateTime <= myCurrentFrameInfo.endTime:
+            if myCurrentOrderBook.exchange == myExchange:
+                myCurrentFrameInfo.addOrder(myCurrentOrderBook)
+            myCurrentOrderBook = OrderBook(next(myOrderReader))
+        while myCurrentTrade.dateTime <= myCurrentFrameInfo.endTime:
+            if myCurrentTrade.exchange == myExchange:
+                myCurrentFrameInfo.addTrade(myCurrentTrade)
+            myCurrentTrade = Trade(next(myTradeReader))
+        print(myCurrentFrameInfo.endTime)
+    return(theCLOBFrameInfos)
+def animate(t):
+    myIndex = int(t*myFPS)
+    myCLOBFrameInfo = myCLOBFrameInfos[myIndex]
+    myTimeStamp = myCLOBFrameInfo.endTime
+    
+    if myCLOBFrameInfo.bid != 0:
+        myBidPrice = myCLOBFrameInfo.bid
+        myBidSize = myCLOBFrameInfo.bidSize
+        myBidLine = [[(-myBidSize / 2, myBidPrice), (myBidSize / 2, myBidPrice)]]
+        lc1.set_segments(myBidLine)
+    if myCLOBFrameInfo.offer != 0: 
+        myOfferPrice = myCLOBFrameInfo.offer
+        myOfferSize = myCLOBFrameInfo.offerSize
+        myOfferLine = [[(-myOfferSize / 2, myOfferPrice), (myOfferSize / 2, myOfferPrice)]]
+        lc2.set_segments(myOfferLine)
+    
+    myTradePrices = [x.price for x in myCLOBFrameInfo.trades]
+    myTradeVolumes = [x.tradeVolume for x in myCLOBFrameInfo.trades]
+    for k in range(len(myCLOBFrameInfo.trades)):
+        myRandomXPos = random.gauss(0,2)
+        ax0.plot(myRandomXPos, myTradePrices[k], 'yx', alpha=.4, markersize = myTradeVolumes[k]/10)
+        ax0.plot(myRandomXPos, myTradePrices[k], 'y.', alpha=.2, markersize = myTradeVolumes[k]/10)
+    ax0.set_title(str(myTimeStamp))
+    
+    myBidTracker.set_xdata([myTimeStamps[myIndex]])
+    myBidTracker.set_ydata([myBids[myIndex]])
+    myOfferTracker.set_xdata([myTimeStamps[myIndex]])
+    myOfferTracker.set_ydata([myOffers[myIndex]])
+    for k in range(len(myCLOBFrameInfo.trades)):
+        ax1.plot(myTimeStamps[myIndex], myTradePrices[k], 'yx', alpha=.4, markersize = myTradeVolumes[k]/10)
+        ax1.plot(myTimeStamps[myIndex], myTradePrices[k], 'y.', alpha = .5, markersize = myTradeVolumes[k]/20)
+    fig.canvas.draw()
+    return(mplfig_to_npimage(fig))
+def carryValuesThroughZeros(aList):
+    myLastValue = 9e9
+    for i in range(len(aList)):
+        myValue = aList[i]
+        if myValue == 0:
+            aList[i] = myLastValue
+        else:
+            myLastValue = myValue
+    return(aList)
+
+if __name__ == '__main__':
+    myOrderCsvFileName = unzipFile("507b7597f38788bd")
+    myTradeCsvFileName = unzipFile("ec166543c332e071")
+    myStartTime = datetime.datetime.strptime("20140709 10:30:00", "%Y%m%d %H:%M:%S")
+    myEndTime = datetime.datetime.strptime("20140709 11:30:00", "%Y%m%d %H:%M:%S")
+    myGifDuration = 10
+    myFPS = 20
+    myPriceMin = 570
+    myPriceMax = 580
+    myFBAInterval = datetime.timedelta(seconds=360)
+    
+    myTimeRange = myEndTime - myStartTime
+    myFrameCount = myGifDuration * myFPS + 1
+    myTimeBucketDiff = myTimeRange / myFrameCount
+    with open(myOrderCsvFileName, 'r') as orderFile, open(myTradeCsvFileName, "r") as tradeFile: 
+        myOrderReader = csv.DictReader(orderFile)
+        myTradeReader = csv.DictReader(tradeFile)
+        myCLOBFrameInfos = checkOutBookFile(myOrderReader, myTradeReader, myStartTime, myEndTime, myTimeBucketDiff)
+    
+    fig = plt.figure()
+    gs = gridspec.GridSpec(3, 3)
+    ax0 = plt.subplot(gs[:-1, :1])
+    ax0.set_xlim(-10, 10)
+    ax0.set_ylim(myPriceMin, myPriceMax)
+    ax0.set_axis_bgcolor('black')
+    myBidPrice, myBidSize = 0, 0
+    myOfferPrice, myOfferSize = 0, 0 
+    myBidLine = [[(-myBidSize/2, myBidPrice), (myBidSize/2, myBidPrice)]]
+    myOfferLine = [[(-myOfferSize/2, myOfferPrice), (myOfferSize/2, myOfferPrice)]]
+    lc1 = mc.LineCollection(myBidLine, colors=np.array([(0, 1, 0, 1)]), linewidths=2)
+    lc2 = mc.LineCollection(myOfferLine, colors=np.array([(1, 0, 0, 1)]), linewidths=2)
+    ax0.add_collection(lc1)
+    ax0.add_collection(lc2)
+    
+    ax1 = plt.subplot(gs[2, :])
+    ax1.set_ylim(myPriceMin, myPriceMax)
+    ax1.set_xlim([myStartTime, myEndTime])
+    myBids = [x.bid for x in myCLOBFrameInfos] # if x.bid != 0]
+    myOffers = [x.offer for x in myCLOBFrameInfos]# if x.offer != 0]
+    myBids = carryValuesThroughZeros(myBids)
+    myOffers = carryValuesThroughZeros(myOffers)
+    myTimeStamps = [date2num(x.endTime) for x in myCLOBFrameInfos]
+    plt.xticks(rotation=70)
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    ax1.plot(myTimeStamps, myBids, 'g')
+    ax1.plot(myTimeStamps, myOffers, 'r')
+    myBidTracker, = ax1.plot([myTimeStamps[0]], [myBids[0]], "go")
+    myOfferTracker, = ax1.plot([myTimeStamps[0]], [myOffers[0]], "ro")
+    plt.gcf().autofmt_xdate()
+    ax1.set_axis_bgcolor('black')
+    
+    animation = mpy.VideoClip(animate, duration=myGifDuration)
+    animation.write_gif("sinc_mpl.gif", fps=myFPS)
