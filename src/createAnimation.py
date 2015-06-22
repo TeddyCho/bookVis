@@ -290,8 +290,8 @@ def extractFrames(inGif, outFolder):
     return True
 if __name__ == '__main__':
     myOrderCsvFileName, myTradeCsvFileName = unzipFile("507b7597f38788bd"), unzipFile("ec166543c332e071")
-    myStartTime = datetime.datetime.strptime("20140709 09:30:00", "%Y%m%d %H:%M:%S")
-    myEndTime = datetime.datetime.strptime("20140709 11:30:00", "%Y%m%d %H:%M:%S")
+    myStartTime = datetime.datetime.strptime("20140709 08:30:00", "%Y%m%d %H:%M:%S")
+    myEndTime = datetime.datetime.strptime("20140709 10:30:00", "%Y%m%d %H:%M:%S")
     myGifDuration, myFPS = 10, 20
     myPriceMin, myPriceMax = 568, 576
     myFBAInterval = datetime.timedelta(seconds=360)
@@ -322,8 +322,8 @@ if __name__ == '__main__':
     
     ax0 = initializeSnapshotGraph(myPriceMin, myPriceMax, gs[:-2, 0], "CLOB")
     ax0.spines['left'].set_alpha(0)
-    myCLOBBidBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myBidColor)
-    myCLOBOfferBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myOfferColor)
+    myCLOBBidBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myBidColor, alpha = 1)
+    myCLOBOfferBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myOfferColor, alpha = 1)
     ax0.add_collection(myCLOBBidBar)
     ax0.add_collection(myCLOBOfferBar)
     
@@ -331,7 +331,7 @@ if __name__ == '__main__':
     ax1.spines['right'].set_alpha(0)
     myFBABidBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myBidColor, alpha = 1)
     myFBAOfferBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myOfferColor, alpha = 1)
-    myFBAMatchBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = "green", alpha = 0)
+    myFBAMatchBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = "green", alpha = 1)
     ax1.add_collection(myFBABidBar)
     ax1.add_collection(myFBAOfferBar)
     ax1.add_collection(myFBAMatchBar)
