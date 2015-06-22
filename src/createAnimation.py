@@ -266,10 +266,10 @@ def animate(t):
     return(mplfig_to_npimage(fig))
 
 def extractFrames(inGif, outFolder):
-    frame = Image.open(inGif)
+    frame = Image.open(outFolder + inGif + '.gif')
     nframes = 0
     while frame:
-        frame.save( '%s/%s-%s.gif' % (outFolder, os.path.basename(inGif), nframes ) , 'GIF')
+        frame.save( '%s%s%s.gif' % (outFolder, inGif, nframes,  ), 'GIF')
         nframes += 1
         try:
             frame.seek( nframes )
@@ -279,12 +279,13 @@ def extractFrames(inGif, outFolder):
 if __name__ == '__main__':
     myOrderCsvFileName, myTradeCsvFileName = unzipFile("507b7597f38788bd"), unzipFile("ec166543c332e071")
     myStartTime = datetime.datetime.strptime("20140709 09:30:00", "%Y%m%d %H:%M:%S")
-    myEndTime = datetime.datetime.strptime("20140709 10:30:00", "%Y%m%d %H:%M:%S")
+    myEndTime = datetime.datetime.strptime("20140709 11:30:00", "%Y%m%d %H:%M:%S")
     myGifDuration, myFPS = 10, 20
     myPriceMin, myPriceMax = 568, 576
     myFBAInterval = datetime.timedelta(seconds=5)
     myFBALastEndTime = asDateTime(0)
-    myGifFileName = "simAnim.gif"
+    myOutputFolder = os.path.join(os.getcwd(), "..\\output\\framesGOOGOneSec\\")
+    myGifFileName = "frame"
     
     myBidColor, myOfferColor, myTradeColor = "#008CBA", "#FF3333", "#FFCC33"
     myAxisAlpha = .25
@@ -332,5 +333,7 @@ if __name__ == '__main__':
     myOfferTracker, = ax2.plot([myTimeStamps[0]], [myOffers[0]], color = myOfferColor, marker = "d", alpha = .6)
     
     animation = mpy.VideoClip(animate, duration=myGifDuration)
-    animation.write_gif(myGifFileName, fps=myFPS)
-    extractFrames(myGifFileName, 'splitFrames')
+    if not os.path.exists(myOutputFolder):
+        os.makedirs(myOutputFolder)
+    animation.write_gif(myOutputFolder + myGifFileName + ".gif", fps=myFPS)
+    extractFrames(myGifFileName, myOutputFolder)
