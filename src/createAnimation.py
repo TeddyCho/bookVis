@@ -294,9 +294,9 @@ if __name__ == '__main__':
     myEndTime = datetime.datetime.strptime("20140709 11:30:00", "%Y%m%d %H:%M:%S")
     myGifDuration, myFPS = 10, 20
     myPriceMin, myPriceMax = 568, 576
-    myFBAInterval = datetime.timedelta(seconds=120)
+    myFBAInterval = datetime.timedelta(seconds=360)
     myFBALastEndTime = asDateTime(0)
-    myOutputFolder = os.path.join(os.getcwd(), "..\\output\\framesGOOG120Sec\\")
+    myOutputFolder = os.path.join(os.getcwd(), "..\\output\\framesGOOG360Sec\\")
     myGifFileName = "frame"
     
     myBidColor, myOfferColor, myTradeColor = "#008CBA", "#FF3333", "#FFCC33"
