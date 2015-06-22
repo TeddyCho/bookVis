@@ -23,6 +23,8 @@ class FrameInfo:
         self.offer = 0
         self.bidSize = 0
         self.offerSize = 0
+        self.matchPrice = 0
+        self.matchSize = 0
     def addOrder(self, aOrderBook):
         self.orderBooks.append(aOrderBook)
         self.bid = aOrderBook.bid
@@ -92,6 +94,35 @@ def carryValuesThroughZeros(aList):
         else:
             myLastValue = myValue
     return(aList)
+def determineFBAState(aFBAInfoInterval):            
+    theFBAStateInterval = aFBAInfoInterval
+    if random.uniform(0,1) < .4:
+        myMatchPrice = (theFBAStateInterval.bid + theFBAStateInterval.offer) / 2
+        theFBAStateInterval.matchPrice = myMatchPrice
+        theFBAStateInterval.matchSize = 2
+    return(theFBAStateInterval)
+def FBAInfoIntervalsToFrameInfos(aFBAInfoIntervals, aStartTime, aEndTime, aTimeBucketDiff):
+    theFBAFrameInfos = [FrameInfo(asDateTime(st), aTimeBucketDiff) for st in range(int(asSeconds(aStartTime)),
+                                                                   int(asSeconds(aEndTime)),
+                                                                   int(aTimeBucketDiff.total_seconds()))]
+    
+    for i in range(len(theFBAFrameInfos)):
+        myEndTime = theFBAFrameInfos[i].endTime
+        myStartTime = theFBAFrameInfos[i].startTime
+        myLatestFBAInfoInterval = determineFBAState(next(i for i in aFBAInfoIntervals[::-1] if i.endTime <= myEndTime))
+        """input(myLatestFBAInfoInterval.bid)
+        input(myLatestFBAInfoInterval.startTime)
+        input(myStartTime)"""
+        if myLatestFBAInfoInterval.endTime > myStartTime:
+            theFBAFrameInfos[i].orderBooks = myLatestFBAInfoInterval.orderBooks
+            theFBAFrameInfos[i].trades = myLatestFBAInfoInterval.trades
+            theFBAFrameInfos[i].bid = myLatestFBAInfoInterval.bid
+            theFBAFrameInfos[i].offer = myLatestFBAInfoInterval.offer
+            theFBAFrameInfos[i].matchPrice = myLatestFBAInfoInterval.matchPrice
+            theFBAFrameInfos[i].bidSize = myLatestFBAInfoInterval.bidSize
+            theFBAFrameInfos[i].offerSize = myLatestFBAInfoInterval.offerSize
+            theFBAFrameInfos[i].matchSize = myLatestFBAInfoInterval.matchSize
+    return(theFBAFrameInfos)
 def checkOutBookFile(aOrderReader, aTradeReader, aStartTime, aEndTime, aTimeBucketDiff, aFBAInterval):
     theCLOBFrameInfos = [FrameInfo(asDateTime(st), aTimeBucketDiff) for st in range(int(asSeconds(aStartTime)),
                                                                    int(asSeconds(aEndTime)),
@@ -122,7 +153,7 @@ def checkOutBookFile(aOrderReader, aTradeReader, aStartTime, aEndTime, aTimeBuck
             for myCurrentFrameInfo in theFBAFrameInfos:
                 if(myCurrentFrameInfo.startTime < myRowDateTime and myRowDateTime <= myCurrentFrameInfo.endTime):
                     myCurrentFrameInfo.addTrade(myCurrentTrade)
-    return(theCLOBFrameInfos, theFBAFrameInfos)
+    return(theCLOBFrameInfos, FBAInfoIntervalsToFrameInfos(theFBAFrameInfos, aStartTime, aEndTime, aTimeBucketDiff))
 def initializeSnapshotGraph(aPriceMin, aPriceMax, aGSLocation, aTitle):
     ax = plt.subplot(aGSLocation)
     ax.set_xlim(-5, 5)
@@ -157,102 +188,83 @@ def initializeTimeGraph(aPriceMin, aPriceMax, aStartTime, aTimeEnd, aGSLocation)
     ax.spines['right'].set_color('white')
     ax.spines['right'].set_alpha(myAxisAlpha)
     return ax
+def updateQuoteBar(aQuotePrice, aQuoteSize, aQuoteBar):
+    if aQuotePrice == 0:
+        aQuoteBar.set_alpha(aQuoteBar.get_alpha()*.8)
+    else:
+        myBidPrice = aQuotePrice
+        myBidSize = aQuoteSize
+        myBidCoord = [[(-myBidSize / 2, myBidPrice), (myBidSize / 2, myBidPrice)]]
+        aQuoteBar.set_segments(myBidCoord)
+        aQuoteBar.set_alpha(1)
+    return(aQuoteBar)
+    
+def drawTradeInfoOnAxis(aPlt, aAxis, aFrameEndTime, aFrameInfo, myPastFrameInfos, myTimeBucketDiff, aBidBar, aOfferBar, aFBAMatchBar,
+                        aYMin, aYMax, aAxisAlpha, aIsCLOB):
+    aAxis.cla()
+    aAxis.set_xlim(-5, 5)
+    aAxis.set_ylim(aYMin, aYMax)
+    aAxis.set_title(("CLOB" if aIsCLOB else "FBA"), color="white", alpha = .35)
+    aAxis.yaxis.tick_right()
+    aPlt.sca(aAxis)
+    aPlt.yticks(color="white", alpha = aAxisAlpha)
+    
+    if aFrameInfo.matchPrice != 0:
+        aFrameInfo.bid = 0
+        aFrameInfo.offer = 0
+        myFBATrades.append({"Price":aFrameInfo.matchPrice, "Volume":aFrameInfo.matchSize, "DateTime":aFrameInfo.endTime, "Alpha":.6})
+    
+    aFBAMatchBar = updateQuoteBar(aFrameInfo.matchPrice, aFrameInfo.matchSize, aFBAMatchBar)
+    aBidBar = updateQuoteBar(aFrameInfo.bid, aFrameInfo.bidSize, aBidBar)
+    aOfferBar = updateQuoteBar(aFrameInfo.offer, aFrameInfo.offerSize, aOfferBar)
+    
+    aAxis.add_collection(aBidBar)
+    aAxis.add_collection(aOfferBar)
+    aAxis.add_collection(aFBAMatchBar)
+    
+    if aIsCLOB:
+        for myFrameInfo in myPastFrameInfos:
+            myFramesPast = (aFrameEndTime - myFrameInfo.endTime) / myTimeBucketDiff
+            if myFramesPast >= 0:
+                myFadeFactor = .90 ** float(myFramesPast)
+                if not myFadeFactor < .1:
+                    for myTrade in myFrameInfo.trades:
+                        random.seed(myTrade.price)
+                        myRandomXPos = random.gauss(0, 1.25)
+                        aAxis.plot(myRandomXPos, myTrade.price, color = myTradeColor, marker = 'x',
+                                 alpha=.4 * myFadeFactor, markersize = myTrade.tradeVolume/10)
+                        aAxis.plot(myRandomXPos, myTrade.price, color = myTradeColor, marker = '.',
+                                 alpha=.4 * myFadeFactor, markersize = myTrade.tradeVolume/10)
+    else:
+        for i in myFBATrades:
+            myMatchPrice = i["Price"]
+            myMatchSize = i["Volume"]
+            ax1.plot(0, myMatchPrice, color = myTradeColor, marker = 'x',
+                     alpha = i["Alpha"], markersize = myMatchSize*10)
+            ax1.plot(0, myMatchPrice, color = myTradeColor, marker = '.',
+                     alpha = i["Alpha"], markersize = myMatchSize*10)
+            i["Alpha"] = i["Alpha"] * .6
+
 def animate(t):
     myIndex = int(t*myFPS)
     myCLOBFrameInfo = myCLOBFrameInfos[myIndex]
     myFrameEndTime = myCLOBFrameInfo.endTime
-    myFBAFrameInfo = next(i for i in myFBAFrameInfos[::-1] if i.endTime <= myFrameEndTime)
+    myFBAFrameInfo = myFBAFrameInfos[myIndex]
+    # myFBAFrameInfo = next(i for i in myFBAFrameInfos[::-1] if i.endTime <= myFrameEndTime)
     myTimeStamp = myCLOBFrameInfo.endTime
     
-    ax0.cla()
-    ax0.set_xlim(-5, 5)
-    ax0.set_ylim(myPriceMin, myPriceMax)
-    ax0.set_title("CLOB", color="white", alpha = .35)
-    ax0.yaxis.tick_right()
-    plt.sca(ax0)
-    plt.yticks(color="white", alpha = myAxisAlpha)
-    if myCLOBFrameInfo.bid != 0:
-        myBidPrice = myCLOBFrameInfo.bid
-        myBidSize = myCLOBFrameInfo.bidSize
-        myBidCoord = [[(-myBidSize / 2, myBidPrice), (myBidSize / 2, myBidPrice)]]
-        myCLOBBidBar.set_segments(myBidCoord)
-    if myCLOBFrameInfo.offer != 0: 
-        myOfferPrice = myCLOBFrameInfo.offer
-        myOfferSize = myCLOBFrameInfo.offerSize
-        myOfferCoord = [[(-myOfferSize / 2, myOfferPrice), (myOfferSize / 2, myOfferPrice)]]
-        myCLOBOfferBar.set_segments(myOfferCoord)
-    ax0.add_collection(myCLOBBidBar)
-    ax0.add_collection(myCLOBOfferBar)
+    drawTradeInfoOnAxis(plt, ax0, myFrameEndTime, myCLOBFrameInfo, myCLOBFrameInfos, myTimeBucketDiff, myCLOBBidBar, myCLOBOfferBar, myFBAMatchBar,
+                        myPriceMin, myPriceMax, myAxisAlpha, True) # put in fba match bar in there
     
-    for myFrameInfo in myCLOBFrameInfos:
-        myFramesPast = (myFrameEndTime - myFrameInfo.endTime) / myTimeBucketDiff
-        if myFramesPast >= 0:
-            myFadeFactor = .90 ** float(myFramesPast)
-            if myFadeFactor < .1:
-                myFadeFactor = 0
-            for myTrade in myFrameInfo.trades:
-                random.seed(myTrade.price)
-                myRandomXPos = random.gauss(0, 1.25)
-                ax0.plot(myRandomXPos, myTrade.price, color = myTradeColor, marker = 'x',
-                         alpha=.4 * myFadeFactor, markersize = myTrade.tradeVolume/10)
-                ax0.plot(myRandomXPos, myTrade.price, color = myTradeColor, marker = '.',
-                         alpha=.4 * myFadeFactor, markersize = myTrade.tradeVolume/10)
-        
+    drawTradeInfoOnAxis(plt, ax1, myFrameEndTime, myFBAFrameInfo, myFBAFrameInfos, myTimeBucketDiff, myFBABidBar, myFBAOfferBar, myFBAMatchBar,
+                        myPriceMin, myPriceMax, myAxisAlpha, False)
+    
     global myFBALastEndTime
     global myIsMatched
     global myTradeTime
     global myMatchPrice
     global myMatchSize
     global myFBATrades
-    ax1.cla()
-    ax1.set_title("FBA", color="white", alpha = .35)
-    ax1.set_xlim(-5, 5)
-    ax1.set_ylim(myPriceMin, myPriceMax)
-    if myFBAFrameInfo.endTime == myFBALastEndTime:
-        myFBAMatchBar.set_alpha(float(myFBAMatchBar.get_alpha()) * .5)
-        myFBABidBar.set_alpha(float(myFBABidBar.get_alpha()) * .5)
-        myFBAOfferBar.set_alpha(float(myFBAOfferBar.get_alpha()) * .5)
-    else:
-        myRandDet = random.uniform(0, 1)
-        myIsMatched = myRandDet > .4
-        myFBAMatchBar.set_alpha(float(myFBAMatchBar.get_alpha()) * .5)
-        myFBABidBar.set_alpha(float(myFBABidBar.get_alpha()) * .5)
-        myFBAOfferBar.set_alpha(float(myFBAOfferBar.get_alpha()) * .5)
-        myBidPrice = myFBAFrameInfo.bid
-        myBidSize = myFBAFrameInfo.bidSize
-        myOfferPrice = myFBAFrameInfo.offer
-        myOfferSize = myFBAFrameInfo.offerSize
-        if myIsMatched:
-            myMatchPrice = (myBidPrice + myOfferPrice) / 2
-            myMatchCoord = [[(1 / 2, myMatchPrice), (-1 / 2, myMatchPrice)]]
-            myFBAMatchBar.set_segments(myMatchCoord)
-            myFBAMatchBar.set_alpha(1)
-            myMatchSize = random.gauss(10, 2)
-            myTradeTime = myFBAFrameInfo.endTime
-            myFBATrades.append({"Price":myMatchPrice, "Volume":myMatchSize, "DateTime":myTradeTime})
-        else:
-            myFBABidBar.set_alpha(1)
-            myFBAOfferBar.set_alpha(1)
-            if myFBAFrameInfo.bid != 0:
-                myBidCoord = [[(-myBidSize / 2, myBidPrice), (myBidSize / 2, myBidPrice)]]
-                myFBABidBar.set_segments(myBidCoord)
-            if myFBAFrameInfo.offer != 0: 
-                myOfferCoord = [[(-myOfferSize / 2, myOfferPrice), (myOfferSize / 2, myOfferPrice)]]
-                myFBAOfferBar.set_segments(myOfferCoord)
-        for i in myFBATrades:
-            myTradeTime = i["DateTime"]
-            myMatchPrice = i["Price"]
-            myMatchSize = i["Volume"]
-            myTradeFramesPast = (myFrameEndTime - myTradeTime) / myTimeBucketDiff
-            myFadeFactor = .7 ** float(myTradeFramesPast)
-            ax1.plot(0, myMatchPrice, color = myTradeColor, marker = 'x',
-                     alpha=.9 * myFadeFactor, markersize = myMatchSize/1)
-            ax1.plot(0, myMatchPrice, color = myTradeColor, marker = '.',
-                     alpha=.9 * myFadeFactor, markersize = myMatchSize/1)
-        myFBALastEndTime = myFBAFrameInfo.endTime
-        ax1.add_collection(myFBAMatchBar)
-        ax1.add_collection(myFBABidBar)
-        ax1.add_collection(myFBAOfferBar)
     
     myBidTracker.set_xdata([myTimeStamps[myIndex]])
     myBidTracker.set_ydata([myBids[myIndex]])
@@ -282,9 +294,9 @@ if __name__ == '__main__':
     myEndTime = datetime.datetime.strptime("20140709 11:30:00", "%Y%m%d %H:%M:%S")
     myGifDuration, myFPS = 10, 20
     myPriceMin, myPriceMax = 568, 576
-    myFBAInterval = datetime.timedelta(seconds=5)
+    myFBAInterval = datetime.timedelta(seconds=120)
     myFBALastEndTime = asDateTime(0)
-    myOutputFolder = os.path.join(os.getcwd(), "..\\output\\framesGOOGOneSec\\")
+    myOutputFolder = os.path.join(os.getcwd(), "..\\output\\framesGOOG120Sec\\")
     myGifFileName = "frame"
     
     myBidColor, myOfferColor, myTradeColor = "#008CBA", "#FF3333", "#FFCC33"
