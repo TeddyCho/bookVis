@@ -190,7 +190,7 @@ def initializeTimeGraph(aPriceMin, aPriceMax, aStartTime, aTimeEnd, aGSLocation)
     return ax
 def updateQuoteBar(aQuotePrice, aQuoteSize, aQuoteBar):
     if aQuotePrice == 0:
-        aQuoteBar.set_alpha(aQuoteBar.get_alpha()*.8)
+        aQuoteBar.set_alpha(aQuoteBar.get_alpha()*.4)
     else:
         myBidPrice = aQuotePrice
         myBidSize = aQuoteSize
@@ -200,11 +200,11 @@ def updateQuoteBar(aQuotePrice, aQuoteSize, aQuoteBar):
     return(aQuoteBar)
     
 def drawTradeInfoOnAxis(aPlt, aAxis, aFrameEndTime, aFrameInfo, myPastFrameInfos, myTimeBucketDiff, aBidBar, aOfferBar, aFBAMatchBar,
-                        aYMin, aYMax, aAxisAlpha, aIsCLOB):
+                        aYMin, aYMax, aAxisAlpha, aIsCLOB, aFBAInterval):
     aAxis.cla()
     aAxis.set_xlim(-5, 5)
     aAxis.set_ylim(aYMin, aYMax)
-    aAxis.set_title(("CLOB" if aIsCLOB else "FBA"), color="white", alpha = .35)
+    aAxis.set_title(("CLOB" if aIsCLOB else "FBA (" + str(myFBAInterval.seconds) + "s)"), color="white", alpha = .35)
     aAxis.yaxis.tick_right()
     aPlt.sca(aAxis)
     aPlt.yticks(color="white", alpha = aAxisAlpha)
@@ -254,10 +254,10 @@ def animate(t):
     myTimeStamp = myCLOBFrameInfo.endTime
     
     drawTradeInfoOnAxis(plt, ax0, myFrameEndTime, myCLOBFrameInfo, myCLOBFrameInfos, myTimeBucketDiff, myCLOBBidBar, myCLOBOfferBar, myFBAMatchBar,
-                        myPriceMin, myPriceMax, myAxisAlpha, True) # put in fba match bar in there
+                        myPriceMin, myPriceMax, myAxisAlpha, True, myFBAInterval) # put in fba match bar in there
     
     drawTradeInfoOnAxis(plt, ax1, myFrameEndTime, myFBAFrameInfo, myFBAFrameInfos, myTimeBucketDiff, myFBABidBar, myFBAOfferBar, myFBAMatchBar,
-                        myPriceMin, myPriceMax, myAxisAlpha, False)
+                        myPriceMin, myPriceMax, myAxisAlpha, False, myFBAInterval)
     
     global myFBALastEndTime
     global myIsMatched
@@ -290,13 +290,13 @@ def extractFrames(inGif, outFolder):
     return True
 if __name__ == '__main__':
     myOrderCsvFileName, myTradeCsvFileName = unzipFile("507b7597f38788bd"), unzipFile("ec166543c332e071")
-    myStartTime = datetime.datetime.strptime("20140709 08:30:00", "%Y%m%d %H:%M:%S")
-    myEndTime = datetime.datetime.strptime("20140709 10:30:00", "%Y%m%d %H:%M:%S")
+    myStartTime = datetime.datetime.strptime("20140709 09:30:00", "%Y%m%d %H:%M:%S")
+    myEndTime = datetime.datetime.strptime("20140709 11:30:00", "%Y%m%d %H:%M:%S")
     myGifDuration, myFPS = 10, 20
     myPriceMin, myPriceMax = 568, 576
-    myFBAInterval = datetime.timedelta(seconds=360)
+    myFBAInterval = datetime.timedelta(seconds=1)
     myFBALastEndTime = asDateTime(0)
-    myOutputFolder = os.path.join(os.getcwd(), "..\\output\\framesGOOG360Sec\\")
+    myOutputFolder = os.path.join(os.getcwd(), "..\\output\\framesGOOG" + str(myFBAInterval.seconds) + "Sec\\")
     myGifFileName = "frame"
     
     myBidColor, myOfferColor, myTradeColor = "#008CBA", "#FF3333", "#FFCC33"
@@ -317,7 +317,6 @@ if __name__ == '__main__':
         myCLOBFrameInfos, myFBAFrameInfos = checkOutBookFile(myOrderReader, myTradeReader, myStartTime,
                                                              myEndTime, myTimeBucketDiff, myFBAInterval)
     fig = plt.figure(facecolor='black', figsize=(6,6), dpi=160)
-    #fig.suptitle("Price ($)", color = "white", alpha = .35)
     gs = gridspec.GridSpec(6, 2)
     
     ax0 = initializeSnapshotGraph(myPriceMin, myPriceMax, gs[:-2, 0], "CLOB")
@@ -327,7 +326,7 @@ if __name__ == '__main__':
     ax0.add_collection(myCLOBBidBar)
     ax0.add_collection(myCLOBOfferBar)
     
-    ax1 = initializeSnapshotGraph(myPriceMin, myPriceMax, gs[:-2, 1], "FBA")
+    ax1 = initializeSnapshotGraph(myPriceMin, myPriceMax, gs[:-2, 1], "FBA (" + str(myFBAInterval.seconds) + "s)")
     ax1.spines['right'].set_alpha(0)
     myFBABidBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myBidColor, alpha = 1)
     myFBAOfferBar = mc.LineCollection([[(0, 0), (0, 0)]], linewidths=2, color = myOfferColor, alpha = 1)
